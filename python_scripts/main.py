@@ -1,5 +1,6 @@
 import quandl
 import numpy as np
+from collections import namedtuple
 from requests import get
 from requests.exceptions import RequestException
 from contextlib import closing
@@ -7,7 +8,7 @@ from bs4 import BeautifulSoup
 
 APIKEY = "5V48hxsMxjK57i7gsNAT"
 quandl.ApiConfig.api_key = APIKEY
-company_taglist = ['AAPL', 'MSFT', 'WMT']
+company_taglist = ['AAPL', 'MSFT', 'WMT', 'FB', 'MU', 'BAC', 'F', 'GE', 'GM', 'CHK']
 
 data = quandl.get_table('WIKI/PRICES', 
                         qopts = { 'columns': ['ticker', 'date', 'close'] }, 
@@ -15,7 +16,8 @@ data = quandl.get_table('WIKI/PRICES',
                         date = { 'gte': '2018-01-01', 'lte': '2018-05-01' },
                         paginate=True)
 
-predictability_responses = []
+company_analysis_data = []
+Company = namedtuple('Company', 'tag fft_response simple_differential accumulated_differential')
 for company_tag in company_taglist:
     company_data = data[data.ticker == company_tag]
 
@@ -26,10 +28,10 @@ for company_tag in company_taglist:
     price_data = (company_data.close).values
     stock_data = np.column_stack((date_data, price_data))
 
-    num_items      = len(stock_data)
-    prev_idx = num_items - 1
-    next_idx = num_items - 2
-    buffer_width   = 5
+    num_items    = len(stock_data)
+    prev_idx     = num_items - 1
+    next_idx     = num_items - 2
+    buffer_width = 5
 
     response_accumulation = 0.0
     while (next_idx >= buffer_width):
@@ -48,5 +50,38 @@ for company_tag in company_taglist:
         response_accumulation += predictability_response
         prev_idx -= 1
         next_idx -= 1
-    
-    predictability_responses.append((company_tag, predictability_response))
+
+    current_price_avg   = (price_data[-1] + 
+                           price_data[-2] + 
+                           price_data[-3]) / 3
+
+    start_price_avg     = (price_data[0] + 
+                           price_data[1] + 
+                           price_data[2]) / 3
+
+    simple_differential = ((current_price_avg - start_price_avg) / 
+                           (current_price_avg))
+
+    prev_idx = num_items - 1
+    next_idx = num_items - 2
+    accumulated_differential = 0.0
+    while (next_idx > 0):
+        prev_stock = price_data[prev_idx]
+        next_stock = price_data[next_idx]
+        prev_date  = date_data[prev_idx]
+        next_date  = date_data[next_idx]
+
+        price_diff = (prev_stock - next_stock) / (prev_date - next_date) 
+        accumulated_differential += ((price_diff * prev_idx) / 
+                                     (prev_stock))
+
+        prev_idx -= 1
+        next_idx -= 1
+
+    company_instance = Company(company_tag,
+                               response_accumulation, 
+                               simple_differential, 
+                               accumulated_differential)
+    company_analysis_data.append(company_instance)
+
+print (company_analysis_data)
