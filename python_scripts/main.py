@@ -6,6 +6,19 @@ from requests.exceptions import RequestException
 from contextlib import closing
 from bs4 import BeautifulSoup
 
+class CompanyAnalysis:
+
+    def __init__(self, tag, confidence, predictability):
+        self.ticker = tag
+        self.confidence = confidence
+        self.predictability = predictability
+
+    def write_properties(self):
+        print ('--------------')
+        print ('Ticker = ', self.ticker)
+        print ('Confidence = ', self.confidence)
+        print ('Predictability = ', self.predictability)
+
 APIKEY = "5V48hxsMxjK57i7gsNAT"
 quandl.ApiConfig.api_key = APIKEY
 company_taglist = ['AAPL', 'MSFT', 'WMT', 'FB', 'MU', 'BAC', 'F', 'GE', 'GM', 'CHK']
@@ -17,7 +30,11 @@ data = quandl.get_table('WIKI/PRICES',
                         paginate=True)
 
 company_analysis_data = []
-Company = namedtuple('Company', 'tag fft_response simple_differential accumulated_differential')
+Company = namedtuple('Company', 'tag data fft_response simple_differential accumulated_differential')
+
+FFT_list = []
+sim_list = []
+dif_list = []
 for company_tag in company_taglist:
     company_data = data[data.ticker == company_tag]
 
@@ -79,9 +96,35 @@ for company_tag in company_taglist:
         next_idx -= 1
 
     company_instance = Company(company_tag,
-                               response_accumulation, 
+                               company_data,
+                               response_accumulation * -1, 
                                simple_differential, 
                                accumulated_differential)
+
+    FFT_list.append(response_accumulation * -1)
+    sim_list.append(simple_differential)
+    dif_list.append(accumulated_differential)
+
     company_analysis_data.append(company_instance)
 
-print (company_analysis_data)
+FFT_min   = min(FFT_list)
+FFT_range = max(FFT_list) - min(FFT_list)
+
+sim_min   = min(sim_list)
+sim_range = max(sim_list) - min(sim_list)
+
+dif_min   = min(dif_list)
+dif_range = max(dif_list) - min(dif_list)
+
+companies = []
+for company in company_analysis_data:
+    predictability = (company.fft_response - FFT_min) / FFT_range
+    sim_confidence = (company.simple_differential - sim_min) / sim_range
+    dif_confidence = (company.accumulated_differential - dif_min) / dif_range
+    confidence = (sim_confidence + dif_confidence) / 2
+
+    company_object = CompanyAnalysis(company.tag, confidence, predictability)
+    companies.append(company_object)
+
+print (companies)
+
