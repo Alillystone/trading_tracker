@@ -1,231 +1,188 @@
-import quandl
+import datetime
+import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import namedtuple
-from requests import get
-from requests.exceptions import RequestException
-from contextlib import closing
-from bs4 import BeautifulSoup
+import os
+import csv
+from tiingo import TiingoClient
 
-class CompanyAnalysis:
+# csvs for each state, initialisation (i.e each period), then a live CSV
+#
 
-    def __init__(self, tag, data, confidence, predictability):
-        self.ticker = tag
-        self.confidence = confidence
-        self.predictability = predictability
-        self.data = data
-
-    def write_properties(self):
-        print ('--------------')
-        print ('Ticker = ', self.ticker)
-        print ('Confidence = ', self.confidence)
-        print ('Predictability = ', self.predictability)
-
-APIKEY = "5V48hxsMxjK57i7gsNAT"
-quandl.ApiConfig.api_key = APIKEY
-company_taglist = ['AAPL', 
-                   'MSFT',
-                   'WMT',
-                   'FB', 
-                   'MU',
-                   'BAC', 
-                   'F',
-                   'GE',
-                   'GM',
-                   'CHK',
-                   'NVDA',
-                   'AMZN',
-                   'NFLX',
-                   'AMD']
-
-data = quandl.get_table('WIKI/PRICES', 
-                        qopts = { 'columns': ['ticker', 'date', 'close'] }, 
-                        ticker = company_taglist, 
-                        date = { 'gte': '2018-01-01', 'lte': '2018-06-10' },
-                        paginate=True)
-
-company_analysis_data = []
-Company = namedtuple('Company', 'tag data fft_response simple_differential accumulated_differential')
-
-FFT_list = []
-sim_list = []
-dif_list = []
-for company_tag in company_taglist:
-    company_data = data[data.ticker == company_tag]
-
-    unmodified_dates = (company_data.date).values.astype('datetime64[D]')
-    start_date = unmodified_dates[0]
-    date_data  = (unmodified_dates - start_date).astype('float64')
-
-    price_data = (company_data.close).values
-    stock_data = np.column_stack((date_data, price_data))
-
-    num_items    = len(stock_data)
-    prev_idx     = num_items - 1
-    next_idx     = num_items - 2
-    buffer_width = 5
-
-    response_accumulation = 0.0
-    while (next_idx >= buffer_width):
-
-        prev_stock_slice = price_data[prev_idx - buffer_width:prev_idx]
-        next_stock_slice = price_data[next_idx - buffer_width:next_idx]
-
-        prev_fft = np.fft.fft(prev_stock_slice)
-        next_fft = np.fft.fft(next_stock_slice)
-
-        prev_response = np.angle(prev_fft)
-        next_response = np.angle(next_fft)
-
-        predictability_response  = np.sum(np.abs(prev_response - 
-                                                 next_response))
-        response_accumulation += predictability_response
-        prev_idx -= 1
-        next_idx -= 1
-
-    current_price_avg   = (price_data[-1] + 
-                           price_data[-2] + 
-                           price_data[-3]) / 3
-
-    start_price_avg     = (price_data[0] + 
-                           price_data[1] + 
-                           price_data[2]) / 3
-
-    simple_differential = ((current_price_avg - start_price_avg) / 
-                           (current_price_avg))
-
-    prev_idx = num_items - 1
-    next_idx = num_items - 2
-    accumulated_differential = 0.0
-    while (next_idx > 0):
-        prev_stock = price_data[prev_idx]
-        next_stock = price_data[next_idx]
-        prev_date  = date_data[prev_idx]
-        next_date  = date_data[next_idx]
-
-        price_diff = (prev_stock - next_stock) / (prev_date - next_date) 
-        accumulated_differential += ((price_diff * prev_idx) / 
-                                     (prev_stock))
-
-        prev_idx -= 1
-        next_idx -= 1
-
-    company_instance = Company(company_tag,
-                               company_data,
-                               response_accumulation * -1, 
-                               simple_differential, 
-                               accumulated_differential)
-
-    FFT_list.append(response_accumulation * -1)
-    sim_list.append(simple_differential)
-    dif_list.append(accumulated_differential)
-
-    company_analysis_data.append(company_instance)
-
-FFT_min   = min(FFT_list)
-FFT_range = max(FFT_list) - min(FFT_list)
-
-sim_min   = min(sim_list)
-sim_range = max(sim_list) - min(sim_list)
-
-dif_min   = min(dif_list)
-dif_range = max(dif_list) - min(dif_list)
-
-print (FFT_list)
-print (sim_list)
-print (dif_list)
-
-companies = []
-risk_list = []
-for company in company_analysis_data:
-    predictability = (company.fft_response - FFT_min) / FFT_range
-    sim_confidence = (company.simple_differential - sim_min) / sim_range
-    dif_confidence = (company.accumulated_differential - dif_min) / dif_range
-    confidence = (sim_confidence + dif_confidence) / 2
-
-    company_object = CompanyAnalysis(company.tag, company.data, confidence, predictability)
-    companies.append(company_object)
-
-    f, axes_array = plt.subplots(2, figsize=(20,10))
-    axes_array[0].plot(((company.data).close).values)
-    axes_array[1].bar([1,2], [confidence, predictability])
-    f.suptitle(company.tag)
-    output = company.tag + ".png"
-    f.savefig(output)
-
-    risk_percentage = ((predictability + 2 * confidence) / 3) * 100
-    risk_list.append((company.tag, risk_percentage))
-
-risk_array = np.asarray(risk_list)
-risk_array = np.sort(risk_array, axis=0)
-risk_array = np.flip(risk_array, 0)
-print (risk_array)
+def ensure_directory_exists(directory):
+    if (not os.path.exists(directory)):
+        os.makedirs(directory)
 
 class TraderAI:
 
-    class ScraperAI:
+    def __init__(self, CLIENT):
+        self.CLIENT = CLIENT
+        self.company_info = CLIENT.list_stock_tickers()
 
-    class AnalysisAI:
+    def initialise(self):
 
-        def __init__(start_date, end_date):
-            self.start_date = start_date
-            self.end_date   = end_date
-            company
+        # self.SCRAPER  = ScraperAI()
+        # self.SCRAPER.initialise()
 
-        def calculate_FFT(data):
-            num_items    = len(data)
-            prev_idx     = num_items - 1
-            next_idx     = num_items - 2
-            buffer_width = 5
-
-            response_accumulation = 0.0
-            while (next_idx >= buffer_width):
-
-                prev_stock_slice = data[prev_idx - buffer_width:prev_idx]
-                next_stock_slice = data[next_idx - buffer_width:next_idx]
-
-                prev_fft = np.fft.fft(prev_stock_slice)
-                next_fft = np.fft.fft(next_stock_slice)
-
-                prev_response = np.angle(prev_fft)
-                next_response = np.angle(next_fft)
-
-                predictability_response  = np.sum(np.abs(prev_response - 
-                                                         next_response))
-                response_accumulation += predictability_response
-                prev_idx -= 1
-                next_idx -= 1
-
-            return response_accumulation
-
-        def simple_diff(data):
-
-            return data[-1] - data[0]
-
-        def first_order_diff(temporal, data):
-
+        self.ANALYSER = AnalysisAI(self.CLIENT)
+        self.ANALYSER.initialise(self.company_info[29000:29300])
         
-        def secnd_order_diff(temporal, data):
 
+    def live(self):
+        alive = True
+        while (alive):
+            self.SCRAPER.increment()
 
-    def __init__():
-        self.ticker_list = ['AAPL', 
-                            'WMT', 
-                            'FB', 
-                            'F',
-                            'MSFT', 
-                            'BAC', 
-                            'MU',
-                            'CHK',
-                            'GE',
-                            'GM',
-                            'NVDA',
-                            'AMZN',
-                            'NFLX',
-                            'AMD']
+class ScraperAI():
+    def __init__(self):
+        self.hi = "hi" # Have variables tracked accumulated variables
 
-    def run():
+class AnalysisAI():
 
+    def __init__(self, CLIENT):
 
+        self.CLIENT =   CLIENT
 
+        subfolder = "csvs/"
+        headers   = [("ticker_symbol", "FFT_response", "differential_response")]
+        self.week_filename    = subfolder + "week_data.csv"
+        self.month_filename   = subfolder + "month_data.csv"
+        self.quarter_filename = subfolder + "quarter_data.csv"
+        self.year_filename    = subfolder + "year_data.csv"
+        self.lustrum_filename = subfolder + "lustrum_data.csv"
+
+        ensure_directory_exists(subfolder)
+
+        iter_list = []
+        iter_list.append(self.week_filename)
+        iter_list.append(self.month_filename)
+        iter_list.append(self.quarter_filename)
+        iter_list.append(self.year_filename)
+        iter_list.append(self.lustrum_filename)
+
+        for filename in iter_list:
+            with open(filename, 'a') as csvfile:
+                writer = csv.writer(csvfile, delimiter=str(','))
+                writer.writerows(headers)
+        # Have variables tracked accumulated variables
+
+    def initialise(self, company_info):
+
+        current_date = datetime.datetime.today()
+        week_date    = current_date - datetime.timedelta(days=7)
+        month_date   = current_date - datetime.timedelta(days=31)
+        quarter_date = current_date - datetime.timedelta(days=93)
+        yearly_date  = current_date - datetime.timedelta(days=365)
+        lustrum_date = current_date - datetime.timedelta(days=1826)
+
+        date_list = []
+        date_list.append((week_date,    
+                          self.week_filename))
+        date_list.append((month_date,   
+                          self.month_filename))
+        date_list.append((quarter_date, 
+                          self.quarter_filename))
+        date_list.append((yearly_date,
+                          self.year_filename))
+        date_list.append((lustrum_date,
+                          self.lustrum_filename))
+        current_date = current_date.strftime('%Y-%m-%d')
+
+        for ordereddict in company_info:
+            info = list(ordereddict.items())
+            ticker_symbol       = info[0][1]
+            stock_start_date    = info[4][1]
+            if (not len(stock_start_date)):
+                stock_start_date = '2000-01-01'
+            stock_start_date = datetime.datetime.strptime(stock_start_date, 
+                                                          '%Y-%m-%d')
+
+            for start_date, filename in date_list:
+                
+                if (start_date < stock_start_date):
+                    start_date = stock_start_date
+
+                start_date = start_date.strftime('%Y-%m-%d')
+
+                try:
+                    data = self.CLIENT.get_dataframe(ticker_symbol,
+                                                     startDate = start_date,
+                                                     endDate = current_date)
+                except:
+                    msg = ("Could not retrieve data for ticker " 
+                            + ticker_symbol +".")
+                    print (msg)
+                    continue
+
+                with open(filename, 'a') as csvfile:
+                    writer = csv.writer(csvfile, delimiter=str(','))
+                    if (len(data) < 3):
+                        output = [(ticker_symbol, 0.0, 0.0)]
+                        writer.writerows(output)
+                    else:
+                        close_stock_price = (data.adjClose).values
+
+                        buffer_width = 3
+                        FFT_response = self.calculate_FFT(close_stock_price, 
+                                                          buffer_width)
+                        diff_response = self.simple_diff(close_stock_price)
+
+                        output = [(ticker_symbol, FFT_response, diff_response)] 
+                        writer.writerows(output)
+                        
+    def calculate_FFT(self, data, buffer_width):
+        num_items    = len(data)
+        prev_idx     = num_items - 1
+        next_idx     = num_items - 2
+
+        response_accumulation = 0.0
+        while (next_idx >= buffer_width):
+
+            prev_stock_slice = data[prev_idx - buffer_width:prev_idx]
+            next_stock_slice = data[next_idx - buffer_width:next_idx]
+
+            prev_fft = np.fft.fft(prev_stock_slice)
+            next_fft = np.fft.fft(next_stock_slice)
+
+            prev_response = np.angle(prev_fft)
+            next_response = np.angle(next_fft)
+
+            predictability_response  = np.sum(np.abs(prev_response - 
+                                                     next_response))
+            response_accumulation += predictability_response
+            prev_idx -= 1
+            next_idx -= 1
+
+        return response_accumulation
+
+    def simple_diff(self, data):
+
+        start_price = (data[0] + 
+                       data[1] + 
+                       data[2]) / 3
+
+        end_price   = (data[-1] + 
+                       data[-2] + 
+                       data[-3]) / 3
+
+        differential = (end_price - start_price) / start_price
+        differential *= 100
+
+        return differential
+
+    def increment():
+        self.hi = "hi"
+        # retrieve most up to date stock data 
+
+def main():
+    config = {}
+    config['session'] = True
+    config['api_key'] = "4069fe9d132ea2d8cf8b50cedbc4b0d6d764e5eb"
+
+    client = TiingoClient(config)
+    TRADER = TraderAI(client)
+    TRADER.initialise()
+
+if __name__ == "__main__":
+    main()
 
