@@ -31,21 +31,21 @@ class TraderAI:
 
     def initialise(self):
 
-        # company_info = self.CLIENT.list_stock_tickers()
-        # self.company_info = []
-        # for ordereddict in company_info:
-        #     info = list(ordereddict.items())
-        #     ticker_symbol   = info[0][1]
-        #     exchange_symbol = info[1][1]
-        #     start_date      = info[4][1]
-
-        #     if (exchange_symbol == 'NYSE' or
-        #         exchange_symbol == 'LSE' or
-        #         exchange_symbol == 'NASDAQ') :
-
-        #         company_data = (ticker_symbol, exchange_symbol, start_date)
-        #         self.company_info.append(company_data)
+        company_info = self.CLIENT.list_stock_tickers()
         self.company_info = []
+        for ordereddict in company_info:
+            info = list(ordereddict.items())
+            ticker_symbol   = info[0][1]
+            exchange_symbol = info[1][1]
+            start_date      = info[4][1]
+
+            if (exchange_symbol == 'NYSE' or
+                exchange_symbol == 'LSE' or
+                exchange_symbol == 'NASDAQ') :
+
+                company_data = (ticker_symbol, exchange_symbol, start_date)
+                self.company_info.append(company_data)
+        
         if (self.use_scraper):
             self.SCRAPER  = ScraperAI()
             self.SCRAPER.initialise(self.company_info)
@@ -146,52 +146,40 @@ class AnalysisAI():
 
     def initialise(self, company_info):
 
-        self.company_info = company_info
+        self.company_info = company_info[20:40]
 
         date_list = self.retrieve_dates_filenames_list()
         current_date = self.current_date.strftime('%Y-%m-%d')
         
-        self.company_info = ['AMD', 'FB', 'NVDA', 'AAPL', 'INTC', 'AMZN']
         for company_info in self.company_info:
 
-            # ticker_symbol       = company_info[0]
-            # stock_start_date    = company_info[2]
-            ticker_symbol = company_info
-            stock_start_date = "2000-01-01"
+            ticker_symbol       = company_info[0]
+            stock_start_date    = company_info[2]
+
             if (not len(stock_start_date)):
                 stock_start_date = '2000-01-01'
 
             stock_start_date = datetime.datetime.strptime(stock_start_date, 
                                                           '%Y-%m-%d')
 
+            try:
+                df_ticker = self.CLIENT.get_dataframe(ticker_symbol,
+                                                 startDate = stock_start_date,
+                                                 endDate =   self.current_date)
+            except:
+                msg = ("Could not retrieve data for ticker " 
+                        + ticker_symbol +".")
+                print (msg)
+                continue 
+
             for start_date, filename in date_list:
-                
-                if (start_date < stock_start_date):
-                    start_date = stock_start_date
 
-                start_date = start_date.strftime('%Y-%m-%d')
-
-                try:
-                    data = self.CLIENT.get_dataframe(ticker_symbol,
-                                                     startDate = start_date,
-                                                     endDate = self.current_date)
-                except:
-                    msg = ("Could not retrieve data for ticker " 
-                            + ticker_symbol +".")
-                    print (msg)
-                    continue 
+                df_analysis_data = df_ticker[df_ticker.index.to_pydatetime() > start_date]
 
                 with open(filename, 'a') as csvfile:
                     writer = csv.writer(csvfile, delimiter=str(','))
-                    if (len(data) < 3):
-                        output = [(ticker_symbol, 
-                                   0.0, 
-                                   0.0,
-                                   0.0,
-                                   0.0)]
-                        writer.writerows(output)
-                    else:
-                        close_stock_price = (data.adjClose).values
+                    if (len(df_analysis_data) > 3):
+                        close_stock_price = (df_analysis_data.adjClose).values
 
                         percentage_change   = self.trend(
                                                            close_stock_price)
@@ -222,26 +210,24 @@ class AnalysisAI():
 
         df_trend          = df_all.sort_values(by=['trend'], ascending=False)
         df_deviation      = df_all.sort_values(by=['deviation'])
-        df_predictability = df_all.sort_values(by=['predictability'], ascending=False)
+        df_predictability = df_all.sort_values(by=['predictability'])
         df_differential   = df_all.sort_values(by=['mean_differential'], ascending=False)
         
         data_frame_list = []
-        data_frame_list.append(df_trend.reset_index(drop=True))
-        data_frame_list.append(df_deviation.reset_index(drop=True))
-        data_frame_list.append(df_predictability.reset_index(drop=True))
-        data_frame_list.append(df_differential.reset_index(drop=True))
+        data_frame_list.append((df_trend.reset_index(drop=True),5))
+        data_frame_list.append((df_deviation.reset_index(drop=True),2))
+        data_frame_list.append((df_differential.reset_index(drop=True),1))
+        data_frame_list.append((df_predictability.reset_index(drop=True),4))
         num_analysis_methods = len(data_frame_list)
 
         tickers = np.asarray(df_all.ticker_symbol)
         num_tickers = len(tickers)
         df_all['rank'] = pd.Series(np.zeros(num_tickers))
-        df_all['rank_count'] = pd.Series(np.zeros(num_tickers))
 
-        for data_frame in data_frame_list:
+        for data_frame, weight in data_frame_list:
             for index, row in data_frame.iterrows():
                 symbol_idx = df_all.index[df_all.ticker_symbol == row[0]].tolist()[0]
                 df_all.loc[symbol_idx, 'rank'] += index
-                df_all.loc[symbol_idx, 'rank_count'] += 1 
 
         self.df_live = df_all.sort_values(by=['rank']).reset_index(drop=True)
         print (self.df_live)
