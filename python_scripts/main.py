@@ -117,38 +117,73 @@ class AnalysisAI():
 
         self.CLIENT =   CLIENT
 
-        subfolder = "csvs/"
-        headers   = [("ticker_symbol", 
-                      "trend", 
-                      "deviation",
-                      "predictability",
-                      "mean_differential",
-                      "var_differential")]
+        self.csv_folder = "csvs/"
+        ensure_directory_exists(self.csv_folder)
 
-        self.week_filename    = subfolder + "week_data.csv"
-        self.month_filename   = subfolder + "month_data.csv"
-        self.quarter_filename = subfolder + "quarter_data.csv"
-        self.year_filename    = subfolder + "year_data.csv"
-        self.lustrum_filename = subfolder + "lustrum_data.csv"
+        self.create_metric_dataframe()
+        self.create_dates_dataframe()
+        self.write_csv_headers()
 
-        ensure_directory_exists(subfolder)
+    def create_metric_dataframe(self):
+        metric_data = {'metric_label' : ['percentage_change',
+                                         'stability_deviation',
+                                         'fft_predictability',
+                                         'mean_stock_difference',
+                                         'var_stock_difference'],
+                       'metric_rank_weight' : [5,
+                                               2,
+                                               1,
+                                               4,
+                                               1],
+                       'higher' : [False,
+                                   True,
+                                   True,
+                                   False,
+                                   True]}
+        self.df_metrics = pd.DataFrame(data=metric_data)
 
-        iter_list = [self.week_filename,
-                     self.month_filename,
-                     self.quarter_filename,
-                     self.year_filename,
-                     self.lustrum_filename]
+    def create_dates_dataframe(self):
+        self.current_date = retrieve_current_date()
+        week_date    = self.current_date - datetime.timedelta(days=7)
+        month_date   = self.current_date - datetime.timedelta(days=31)
+        quarter_date = self.current_date - datetime.timedelta(days=93)
+        yearly_date  = self.current_date - datetime.timedelta(days=365)
+        lustrum_date = self.current_date - datetime.timedelta(days=1826)
 
-        for filename in iter_list:
+        date_data = {'date_label' : ['current',
+                                     'week',
+                                     'month',
+                                     'quarter',
+                                     'year',
+                                     'lustrum'], 
+                     'date' : [self.current_date,
+                               week_date,
+                               month_date,
+                               quarter_date,
+                               yearly_date,
+                               lustrum_date],
+                     'date_filename' : [self.csv_folder + 'current.csv',
+                                        self.csv_folder + 'week.csv',
+                                        self.csv_folder + 'month.csv',
+                                        self.csv_folder + 'quarter.csv',
+                                        self.csv_folder + 'yearly.csv',
+                                        self.csv_folder + 'lustrum.csv']}
+        self.df_dates = pd.DataFrame(data=date_data)
+
+    def write_csv_headers(self):
+
+        metric_headers = self.df_metrics.metric_label.values.tolist()
+        metric_headers = ['ticker_symbol'] + metric_headers
+        files = self.df_dates.date_filename.values
+        for filename in files:
             with open(filename, 'a') as csvfile:
-                writer = csv.writer(csvfile, delimiter=str(','))
-                writer.writerows(headers)
+                writer = csv.writer(csvfile, delimiter=str(',')) 
+                writer.writerow(metric_headers)
 
     def initialise(self, company_info):
 
         self.company_info = company_info[20:40]
 
-        date_list = self.retrieve_dates_filenames_list()
         current_date = self.current_date.strftime('%Y-%m-%d')
         
         for company_info in self.company_info:
@@ -172,7 +207,10 @@ class AnalysisAI():
                 print (msg)
                 continue 
 
-            for start_date, filename in date_list:
+            for index, row in self.df_dates.iterrows():
+
+                start_date = row['date']
+                filename = row['date_filename']
 
                 df_analysis_data = df_ticker[df_ticker.index.to_pydatetime() > start_date]
 
@@ -182,13 +220,13 @@ class AnalysisAI():
                         close_stock_price = (df_analysis_data.adjClose).values
 
                         percentage_change   = self.trend(
-                                                           close_stock_price)
+                                                        close_stock_price)
                         deviation           = self.deviation(
-                                                           close_stock_price)
+                                                        close_stock_price)
                         predictability      = self.predictability(
-                                                           close_stock_price)
+                                                        close_stock_price)
                         mean_diff, var_diff = self.differentials(
-                                                           close_stock_price)
+                                                        close_stock_price)
 
                         output = [(ticker_symbol, 
                                    percentage_change,
@@ -200,60 +238,32 @@ class AnalysisAI():
                         writer.writerows(output)
 
         self.date_of_initialisation = self.current_date
-        self.initialise_live_dataframe(date_list)
+        self.initialise_live_dataframe()
     
-    def initialise_live_dataframe(self, date_list):
+    def initialise_live_dataframe(self):
 
-        df_all = pd.DataFrame()
-        with open(self.week_filename, 'rb') as datafile:
-            df_all = pd.read_csv(self.month_filename, sep = ",")
+        month_filename = self.df_dates.date_filename[
+                         self.df_dates.date_label == 'month'].tolist()[0]
+        df_all = pd.read_csv(month_filename, sep = ",", error_bad_lines=False)
 
-        df_trend          = df_all.sort_values(by=['trend'], ascending=False)
-        df_deviation      = df_all.sort_values(by=['deviation'])
-        df_predictability = df_all.sort_values(by=['predictability'])
-        df_differential   = df_all.sort_values(by=['mean_differential'], ascending=False)
-        
-        data_frame_list = []
-        data_frame_list.append((df_trend.reset_index(drop=True),5))
-        data_frame_list.append((df_deviation.reset_index(drop=True),2))
-        data_frame_list.append((df_differential.reset_index(drop=True),1))
-        data_frame_list.append((df_predictability.reset_index(drop=True),4))
-        num_analysis_methods = len(data_frame_list)
+        num_data_points = len(df_all)
+        rank_label = 'rank'
+        df_all[rank_label] = pd.Series(np.zeros(num_data_points))
 
-        tickers = np.asarray(df_all.ticker_symbol)
-        num_tickers = len(tickers)
-        df_all['rank'] = pd.Series(np.zeros(num_tickers))
-
-        for data_frame, weight in data_frame_list:
-            for index, row in data_frame.iterrows():
-                symbol_idx = df_all.index[df_all.ticker_symbol == row[0]].tolist()[0]
-                df_all.loc[symbol_idx, 'rank'] += index
-
-        self.df_live = df_all.sort_values(by=['rank']).reset_index(drop=True)
+        for index, row in self.df_metrics.iterrows():
+            sort_type     = row['higher']
+            metric_label  = row['metric_label']
+            metric_weight = row['metric_rank_weight']
+            df_metric = (df_all.sort_values(
+                         by=[metric_label], 
+                         ascending=sort_type)).reset_index(drop=True)
+            for index, row in df_metric.iterrows():
+                symbol_idx = df_all.index[
+                             df_all.ticker_symbol == row['ticker_symbol']].tolist()[0]
+                df_all.loc[symbol_idx, rank_label] += index * metric_weight
+                
+        self.df_live = df_all.sort_values(by=[rank_label]).reset_index(drop=True)
         print (self.df_live)
-
-    def retrieve_dates_filenames_list(self):
-
-        self.current_date = retrieve_current_date()
-        self.week_date    = self.current_date - datetime.timedelta(days=7)
-        self.month_date   = self.current_date - datetime.timedelta(days=31)
-        self.quarter_date = self.current_date - datetime.timedelta(days=93)
-        self.yearly_date  = self.current_date - datetime.timedelta(days=365)
-        self.lustrum_date = self.current_date - datetime.timedelta(days=1826)
-
-        date_list = []
-        date_list.append((self.week_date,    
-                          self.week_filename))
-        date_list.append((self.month_date,   
-                          self.month_filename))
-        date_list.append((self.quarter_date, 
-                          self.quarter_filename))
-        date_list.append((self.yearly_date,
-                          self.year_filename))
-        date_list.append((self.lustrum_date,
-                          self.lustrum_filename))
-
-        return date_list
 
     def increment(self, relevant_tickers):
         
@@ -329,9 +339,10 @@ class AnalysisAI():
 
     def differentials(self, data):
 
+        stock_mean = np.mean(data)
         diff_data = np.diff(data)
-        mean = np.mean(diff_data)
-        var = np.var(diff_data)
+        mean = np.mean(diff_data) / stock_mean
+        var = np.var(diff_data) / stock_mean
 
         return mean, var
 
