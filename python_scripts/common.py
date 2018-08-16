@@ -9,5 +9,8 @@ def ensure_directory_exists(directory):
         shutil.rmtree(directory)
         os.makedirs(directory)
 
+def check_file_exists(filepath):
+	return os.path.isfile(filepath)
+	
 def retrieve_current_date():
     return datetime.datetime.today()
