@@ -1,5 +1,6 @@
 import stock_analysis
 import language_analysis
+
 class TraderAI:
 
     def __init__(self, CLIENT):
@@ -32,7 +33,6 @@ class TraderAI:
             self.ANALYSER = stock_analysis.AnalysisAI(self.CLIENT)
             self.ANALYSER.initialise(self.company_info)
         
-
     def live(self):
         alive = True
         while (alive):

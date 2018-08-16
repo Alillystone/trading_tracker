@@ -1,15 +1,11 @@
+import wordnik
+import urllib
 from bs4 import BeautifulSoup as HTMLReader
 
 class ScraperAI():
-    def __init__(self, CLIENT):
-        self.CLIENT = CLIENT
+    def __init__(self):
         self.headline_weight = 5
         self.paragraph_weight = 1
-
-        apiURL = 'http://api.wordnik.com/v4'
-        apikey = 'MY API KEY'
-        wordclient = swagger.ApiClient(apikey, apiURL)
-        self.DICTIONARY = WordApi.WordApi(wordclient)
 
         # Create ordered dicts for words: tone, multuplier, base_words
         self.grammer_types = ["verb",
@@ -33,7 +29,6 @@ class ScraperAI():
         print ("------")
         for word in word_list:
             print (word)
-            print (self.DICTIONARY.getDefinitions(word))
 
     def determine_article_tone(self, article_link):
         article_parameters = article_link.find_all("a")
