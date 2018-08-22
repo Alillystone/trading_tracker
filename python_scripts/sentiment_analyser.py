@@ -8,7 +8,7 @@ from random import randint
 from PyDictionary import PyDictionary
 
 
-class SentimentNeuralNetwork:
+class SentimentAnalyser:
     def __init__(self, 
                  min_neurons, 
                  max_neurons, 
@@ -60,8 +60,8 @@ class SentimentNeuralNetwork:
 
     def prepare_training_data(self):
 
-        files = {'DIR' : ['tone_test_files/pos.txt',
-                          'tone_test_files/neg.txt'],
+        files = {'DIR' : ['sentiment_data/positive/pos.txt',
+                          'sentiment_data/negative/neg.txt'],
                  'CLF' : [[1,0],
                           [0,1]]}
 
@@ -179,10 +179,3 @@ class SentimentNeuralNetwork:
             accuracy = tf.reduce_mean(tf.cast(correct, 'float'))
             print('Accuracy:',accuracy.eval({self.x:self.tests_x,
                                              self.y:self.tests_y}))
-
-if __name__ == "__main__":
-    SentimentNeuralNetwork = SentimentNeuralNetwork(min_neurons=1000,
-                                                    max_neurons=2000,
-                                                    num_hidden_layers=3)
-    SentimentNeuralNetwork.prepare_training_data()
-    SentimentNeuralNetwork.train_neural_network()

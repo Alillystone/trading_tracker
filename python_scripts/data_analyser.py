@@ -1,17 +1,19 @@
-import common
+import file_system as FileSystem
+import date_formatter as DateFormatter
 import datetime
 import csv
 import pandas as pd
 import numpy as np
 
-class AnalysisAI():
+class DataAnalyser:
 
     def __init__(self, CLIENT):
 
         self.CLIENT = CLIENT
 
         self.csv_folder = "csvs/"
-        common.ensure_directory_exists(self.csv_folder)
+        if not (FileSystem.directory_exists(self.csv_folder)):
+            FileSystem.create_directory(self.csv_folder)
 
         self.create_metric_dataframe()
         self.create_dates_dataframe()
@@ -36,7 +38,7 @@ class AnalysisAI():
         self.df_metrics = pd.DataFrame(data=metric_data)
 
     def create_dates_dataframe(self):
-        self.current_date = common.retrieve_current_date()
+        self.current_date = DateFormatter.current_date()
         week_date    = self.current_date - datetime.timedelta(days=7)
         month_date   = self.current_date - datetime.timedelta(days=31)
         quarter_date = self.current_date - datetime.timedelta(days=93)
@@ -69,41 +71,49 @@ class AnalysisAI():
         metric_headers = ['ticker_symbol'] + metric_headers
         files = self.df_dates.date_filename.values
         for filename in files:
+            if (FileSystem.file_exists(filename)):
+                FileSystem.delete_file(filename)
             with open(filename, 'a') as csvfile:
                 writer = csv.writer(csvfile, delimiter=str(',')) 
                 writer.writerow(metric_headers)
 
     def initialise(self, company_info):
 
-        self.company_info = company_info[20:40]
+        self.company_info = company_info[200:400]
 
-        current_date = self.current_date.strftime('%Y-%m-%d')
-        
         for company_info in self.company_info:
-
             ticker_symbol       = company_info[0]
             stock_start_date    = company_info[2]
 
             if (not len(stock_start_date)):
                 stock_start_date = '2000-01-01'
 
-            stock_start_date = datetime.datetime.strptime(stock_start_date, 
-                                                          '%Y-%m-%d')
+            stock_start_date = DateFormatter.convert_date_to_string(stock_start_date)
 
-            try:
-                df_ticker = self.CLIENT.get_dataframe(ticker_symbol,
-                                                 startDate = stock_start_date,
-                                                 endDate =   self.current_date)
-            except:
-                msg = ("Could not retrieve data for ticker " 
-                        + ticker_symbol +".")
-                print (msg)
-                continue 
+            ticker_csv = self.csv_folder + ticker_symbol + ".csv"
+
+            df_ticker = pd.DataFrame()
+            if (FileSystem.file_exists(ticker_csv)):
+                df_ticker = pd.read_csv(ticker_csv,sep=",",
+                                        parse_dates=['date'],
+                                        index_col=['date'])
+            else:
+                try:
+                    df_ticker = self.CLIENT.get_dataframe(ticker_symbol,
+                                                     startDate = stock_start_date,
+                                                     endDate   = self.current_date)
+                except:
+                    msg = ("Could not retrieve data for ticker " 
+                            + ticker_symbol +".")
+                    print (msg)
+                    continue
+
+                df_ticker.to_csv(ticker_csv,sep=",")
 
             for index, row in self.df_dates.iterrows():
 
                 start_date = row['date']
-                filename = row['date_filename']
+                filename   = row['date_filename']
 
                 df_analysis_data = df_ticker[df_ticker.index.to_pydatetime() > start_date]
 
@@ -136,8 +146,8 @@ class AnalysisAI():
     def initialise_live_dataframe(self):
 
         month_filename = self.df_dates.date_filename[
-                         self.df_dates.date_label == 'month'].tolist()[0]
-        df_all = pd.read_csv(month_filename, sep = ",", error_bad_lines=False)
+                         self.df_dates.date_label == 'year'].tolist()[0]
+        df_all = pd.read_csv(month_filename,sep=",")
 
         num_data_points = len(df_all)
         rank_label = 'rank'
@@ -159,12 +169,7 @@ class AnalysisAI():
                 
         self.df_live = df_all.sort_values(by=[rank_label]).reset_index(drop=True)
         print (self.df_live)
-
-    def increment(self, relevant_tickers):
-        
-        for ticker in relevant_tickers:
-            self.hi = 0
-        # retrieve most up to date stock data
+        ticker_order = self.df_live.ticker_symbol.values
 
     def predictability(self, data):
         num_items    = len(data)
