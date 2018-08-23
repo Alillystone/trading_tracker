@@ -1,6 +1,9 @@
 import os
 import shutil
 
+csv_folder = 'csvs/'
+ticker_data_folder = csv_folder + 'tickers/'
+
 def directory_exists(path):
     return os.path.isdir(path)
 

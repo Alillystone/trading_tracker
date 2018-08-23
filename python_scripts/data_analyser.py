@@ -1,19 +1,21 @@
-import file_system as FileSystem
-import date_formatter as DateFormatter
 import datetime
 import csv
 import pandas as pd
 import numpy as np
+import data_client as DataClient
+import file_system as FileSystem
+import date_formatter as DateFormatter
 
 class DataAnalyser:
 
     def __init__(self, CLIENT):
 
         self.CLIENT = CLIENT
+        if not (FileSystem.directory_exists(FileSystem.csv_folder)):
+            FileSystem.create_directory(FileSystem.csv_folder)
 
-        self.csv_folder = "csvs/"
-        if not (FileSystem.directory_exists(self.csv_folder)):
-            FileSystem.create_directory(self.csv_folder)
+        if not (FileSystem.directory_exists(FileSystem.ticker_data_folder)):
+            FileSystem.create_directory(FileSystem.ticker_data_folder)
 
         self.create_metric_dataframe()
         self.create_dates_dataframe()
@@ -57,16 +59,15 @@ class DataAnalyser:
                                quarter_date,
                                yearly_date,
                                lustrum_date],
-                     'date_filename' : [self.csv_folder + 'current.csv',
-                                        self.csv_folder + 'week.csv',
-                                        self.csv_folder + 'month.csv',
-                                        self.csv_folder + 'quarter.csv',
-                                        self.csv_folder + 'yearly.csv',
-                                        self.csv_folder + 'lustrum.csv']}
+                     'date_filename' : [FileSystem.csv_folder + 'current.csv',
+                                        FileSystem.csv_folder + 'week.csv',
+                                        FileSystem.csv_folder + 'month.csv',
+                                        FileSystem.csv_folder + 'quarter.csv',
+                                        FileSystem.csv_folder + 'yearly.csv',
+                                        FileSystem.csv_folder + 'lustrum.csv']}
         self.df_dates = pd.DataFrame(data=date_data)
 
     def write_csv_headers(self):
-
         metric_headers = self.df_metrics.metric_label.values.tolist()
         metric_headers = ['ticker_symbol'] + metric_headers
         files = self.df_dates.date_filename.values
@@ -77,35 +78,24 @@ class DataAnalyser:
                 writer = csv.writer(csvfile, delimiter=str(',')) 
                 writer.writerow(metric_headers)
 
-    def initialise(self, company_info):
-
-        self.company_info = company_info[200:400]
-
-        for company_info in self.company_info:
-            ticker_symbol       = company_info[0]
-            stock_start_date    = company_info[2]
-
-            if (not len(stock_start_date)):
-                stock_start_date = '2000-01-01'
-
-            stock_start_date = DateFormatter.convert_date_to_string(stock_start_date)
-
-            ticker_csv = self.csv_folder + ticker_symbol + ".csv"
-
+    def initialise(self, df_ticker_info):
+        self.df_ticker_info = df_ticker_info
+        for ticker_index, ticker_row in self.df_ticker_info.iterrows():
+            ticker_symbol    = ticker_row['ticker']
+            stock_start_date = ticker_row['startDate']
+            ticker_csv = FileSystem.ticker_data_folder + ticker_symbol + ".csv"
+            
             df_ticker = pd.DataFrame()
             if (FileSystem.file_exists(ticker_csv)):
                 df_ticker = pd.read_csv(ticker_csv,sep=",",
                                         parse_dates=['date'],
                                         index_col=['date'])
             else:
-                try:
-                    df_ticker = self.CLIENT.get_dataframe(ticker_symbol,
-                                                     startDate = stock_start_date,
-                                                     endDate   = self.current_date)
-                except:
-                    msg = ("Could not retrieve data for ticker " 
-                            + ticker_symbol +".")
-                    print (msg)
+                successful, df_ticker = DataClient.download_stock_data(self.CLIENT,
+                                                                       ticker_symbol,
+                                                                       stock_start_date, 
+                                                                       self.current_date)
+                if not successful:
                     continue
 
                 df_ticker.to_csv(ticker_csv,sep=",")
