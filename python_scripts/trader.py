@@ -31,6 +31,8 @@ class TraderAI:
         ticker_file = self.csv_folder + 'tickers.csv'
 
         if not (FileSystem.file_exists(ticker_file)):
+            if not (FileSystem.directory_exists(self.csv_folder)):
+                FileSystem.create_directory(self.csv_folder)
             df_ticker_info = pd.DataFrame(DataClient.download_tickers(self.CLIENT))
             df_ticker_info.to_csv(ticker_file)
         else:
